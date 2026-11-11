@@ -1,0 +1,384 @@
+# Laboratorul 3: Stabilirea limitelor Dashboard-ului
+
+## Scopul laboratorului
+
+Scopul acestui laborator este de a crea trei diagrame arhitecturale folosind Mermaid: diagrama de context a sistemului (System Context), diagrama containerelor (Container) și diagrama componentelor (Component). În continuare, proiectarea va fi verificată cu ajutorul a trei diagrame de secvență.
+
+Diagramele descriu arhitectura sistemului Personal Investment Dashboard, responsabilitățile componentelor și fluxurile de date dintre utilizator, aplicație și furnizorul extern de date bursiere.
+
+## 1. Diagrama de context a sistemului (System Context)
+
+Diagrama de context prezintă sistemul, utilizatorul și furnizorul extern de date bursiere. Nu sunt prezentate componentele interne ale aplicației sau bazele de date.
+
+```mermaid
+flowchart LR
+    User["Utilizator autentificat"]
+    Dashboard["Dashboard personal pentru investiții"]
+    Provider["Furnizor de date bursiere"]
+
+    User -->|"Consultă și filtrează acțiuni; vizualizează prețuri și istoricul"| Dashboard
+    User -->|"Gestionează lista personală de urmărire"| Dashboard
+    Dashboard -->|"Solicită date bursiere cu întârziere"| Provider
+    Provider -->|"Returnează prețuri, istoric sau erori"| Dashboard
+```
+
+### Explicație
+
+- **Utilizator autentificat:** Consultă și filtrează acțiuni, vizualizează prețuri și date istorice și își gestionează lista personală de urmărire (Watchlist).
+- **Dashboard personal pentru investiții:** Sistemul care oferă informații despre investiții și permite gestionarea listei de urmărire.
+- **Furnizor de date bursiere:** Sistem extern care furnizează date bursiere cu întârziere. Acesta poate returna date invalide, poate limita numărul de cereri sau poate deveni indisponibil.
+
+Utilizatorul interacționează numai cu Dashboard-ul. Dashboard-ul comunică cu furnizorul extern pentru a obține informații bursiere.
+
+## 2. Diagrama containerelor (Container)
+
+Diagrama containerelor prezintă principalele părți ale sistemului și bazele de date. Fiecare container are o responsabilitate distinctă.
+
+```mermaid
+flowchart LR
+    User["Utilizator autentificat"]
+    Provider["Furnizor de date bursiere"]
+
+    subgraph DashboardSystem["Sistemul Dashboard personal pentru investiții"]
+        WebApp["Aplicație web"]
+        App["Aplicația Dashboard"]
+        Collector["Colector de date bursiere"]
+        UserDB[("Baza de date a utilizatorilor")]
+        MarketDB[("Baza de date cu date bursiere")]
+
+        WebApp -->|"Trimite cererile utilizatorului"| App
+        App -->|"Citește și modifică datele utilizatorului"| UserDB
+        App -->|"Solicită prețuri și istoric cu termen limită"| Collector
+        Collector -->|"Citește și salvează date acceptate și progresul sincronizării"| MarketDB
+    end
+
+    User -->|"Utilizează dashboard-ul"| WebApp
+    Collector -->|"Solicită date bursiere folosind credențiale păstrate pe server"| Provider
+    Provider -->|"Returnează date bursiere sau erori"| Collector
+```
+
+### Responsabilitățile containerelor
+
+| Container | Responsabilitate |
+|---|---|
+| Aplicația web | Oferă interfața utilizatorului și afișează rezultatele. |
+| Aplicația Dashboard | Verifică cererile, gestionează căutarea și filtrarea acțiunilor, citește informațiile bursiere și gestionează listele de urmărire. |
+| Colector de date bursiere | Preia, validează și salvează datele bursiere. Gestionează datele invalide, expirarea timpului de așteptare, limitarea cererilor și reîncercările. |
+| Baza de date a utilizatorilor | Stochează informațiile utilizatorilor și listele personale de urmărire. |
+| Baza de date cu date bursiere | Stochează prețurile acceptate, istoricul bursier, marcajele temporale și progresul sincronizării. |
+
+### Decizii de proiectare
+
+Aplicația web comunică cu aplicația Dashboard pentru procesarea cererilor utilizatorilor.
+
+Aplicația Dashboard utilizează baza de date a utilizatorilor pentru informațiile despre utilizatori și operațiile asupra listelor de urmărire. Pentru date bursiere, aceasta trimite cereri către colectorul de date.
+
+Colectorul de date bursiere comunică cu furnizorul extern și salvează datele validate în baza de date cu date bursiere.
+
+Datele de autentificare ale furnizorului sunt păstrate și utilizate pe server de către colector. Acestea nu sunt transmise utilizatorului și nu sunt expuse în browser.
+
+Dacă o sincronizare eșuează, datele bursiere acceptate anterior rămân disponibile.
+
+## 3. Diagrama componentelor (Component)
+
+Diagrama componentelor prezintă structura internă a aplicației Dashboard. Sunt incluse doar componentele logice ale acestei aplicații și elementele externe cu care ele comunică direct.
+
+```mermaid
+flowchart LR
+    WebApp["Aplicație web"]
+    UserDB[("Baza de date a utilizatorilor")]
+    Collector["Colector de date bursiere"]
+
+    subgraph DashboardApp["Aplicația Dashboard"]
+        Identity["Componenta de identificare și acces"]
+        Stock["Componenta de interogare a acțiunilor"]
+        Watchlist["Componenta listei de urmărire"]
+        MarketClient["Componenta de solicitare a datelor bursiere"]
+
+        Identity -->|"Identitate autentificată"| Stock
+        Identity -->|"Identitate autentificată"| Watchlist
+        Stock -->|"Solicită prețuri și istoric"| MarketClient
+    end
+
+    WebApp -->|"Cereri de autentificare"| Identity
+    WebApp -->|"Cereri de căutare și filtrare a acțiunilor"| Stock
+    WebApp -->|"Modificări și citiri ale listei de urmărire"| Watchlist
+
+    Identity -->|"Citește identitatea utilizatorului"| UserDB
+    Watchlist -->|"Citește și modifică lista proprietarului"| UserDB
+    MarketClient -->|"Solicită date bursiere acceptate"| Collector
+    Collector -->|"Returnează date, marcaje temporale sau indisponibilitate"| MarketClient
+```
+
+### Responsabilitățile componentelor
+
+| Componentă | Responsabilitate |
+|---|---|
+| Componenta de identificare și acces | Verifică identitatea utilizatorului și transmite identitatea autentificată pentru verificările ulterioare. |
+| Componenta de interogare a acțiunilor | Validează cererile, caută și filtrează acțiuni și solicită prețuri și date istorice. |
+| Componenta listei de urmărire | Validează operațiile asupra listei, verifică permisiunile și gestionează lista privată a utilizatorului autentificat. |
+| Componenta de solicitare a datelor bursiere | Solicită date prin intermediul colectorului și gestionează rezultatele sau mesajele de indisponibilitate. |
+
+### Decizii de proiectare
+
+Aplicația Dashboard este împărțită în componente în funcție de responsabilitățile lor.
+
+Componenta de identificare și acces verifică identitatea înainte de efectuarea operațiilor protejate.
+
+Componenta de interogare a acțiunilor gestionează cererile referitoare la acțiuni. Componenta listei de urmărire gestionează datele personale și împiedică utilizatorii să modifice listele altor persoane.
+
+Componenta de solicitare a datelor bursiere comunică cu colectorul de date bursiere. Colectorul se află în afara graniței aplicației Dashboard, dar în interiorul graniței generale a sistemului.
+
+## 4. Diagrama de secvență A: Sincronizarea datelor bursiere
+
+Această diagramă prezintă modul în care datele bursiere sunt solicitate, validate și salvate pentru a putea fi utilizate ulterior. Sunt incluse datele invalide, limitarea cererilor, expirarea timpului de așteptare și păstrarea datelor acceptate anterior.
+
+```mermaid
+
+sequenceDiagram
+    participant Scheduler as Programator
+    participant Collector as Colector
+    participant Provider as Furnizor
+    participant Store as Baza de date
+
+    Scheduler->>Collector: Porneste sincronizarea
+    Collector->>Store: Citeste progresul salvat
+    Store-->>Collector: Returneaza progresul
+    Collector->>Provider: Solicita date bursiere
+
+    alt Date valide
+        Provider-->>Collector: Returneaza date valide
+        Collector->>Collector: Valideaza datele
+        Collector->>Store: Salveaza datele si progresul
+        Store-->>Collector: Confirma salvarea
+        Collector-->>Scheduler: Sincronizare reusita
+    else Date invalide
+        Provider-->>Collector: Returneaza date invalide
+        Collector->>Collector: Respinge datele
+        Collector-->>Scheduler: Sincronizare esuata
+        Note over Collector,Store: Datele anterioare raman neschimbate
+    else Cereri limitate
+        Provider-->>Collector: Returneaza eroare de limitare
+        Collector->>Collector: Amana si reprogrameaza cererea
+        Collector-->>Scheduler: Sincronizare amanata
+        Note over Collector,Store: Datele anterioare raman neschimbate
+    else Furnizor indisponibil
+        Provider--xCollector: Expira timpul de asteptare
+        Collector->>Collector: Inregistreaza eroarea
+        Collector-->>Scheduler: Sincronizare esuata
+        Note over Collector,Store: Datele anterioare raman neschimbate
+    end
+
+```
+
+### Ipoteze pentru diagrama A
+
+1. Sincronizarea poate porni automat, conform unui program, sau poate fi declanșată de o cerere atunci când datele lipsesc ori sunt prea vechi.
+2. Colectorul validează simbolurile, prețurile, câmpurile obligatorii și marcajele temporale înainte de acceptarea datelor.
+3. Un lot invalid este respins și nu este salvat ca set de date bursiere acceptate.
+4. Datele noi și progresul sincronizării sunt salvate atomic. Dacă operația eșuează, niciuna dintre modificări nu este confirmată.
+5. Datele acceptate anterior rămân neschimbate atunci când sincronizarea eșuează.
+6. Limitarea cererilor este gestionată conform instrucțiunilor furnizorului, dacă sunt disponibile, și prin reîncercări cu întârzieri controlate.
+7. Datele de autentificare ale furnizorului rămân pe server și nu sunt transmise browserului.
+
+Datele bursiere validate devin disponibile pentru citiri ulterioare numai după confirmarea salvării în baza de date.
+
+## 5. Diagrama de secvență B: Citirea prețului unei acțiuni
+
+Această diagramă prezintă modul în care un utilizator autentificat solicită prețul unei acțiuni. Sunt tratate verificarea identității, datele introduse incorect, lipsa prețului, datele prea vechi și erorile bazei de date.
+
+```mermaid
+sequenceDiagram
+    actor User as Utilizator autentificat
+    participant Web as Aplicație web
+    participant App as Aplicația Dashboard
+    participant Identity as Componenta de identificare și acces
+    participant Stock as Componenta de interogare a acțiunilor
+    participant Collector as Colector de date bursiere
+    participant Store as Baza de date cu date bursiere
+
+    User->>Web: Solicită prețul unei acțiuni
+    Web->>App: Trimite simbolul acțiunii și cererea
+    App->>Identity: Verifică identitatea
+    Identity-->>App: Identitate validă sau invalidă
+
+    alt Identitatea este invalidă
+        App-->>Web: Respinge cererea (401 Unauthorized)
+        Web-->>User: Afișează mesaj de autentificare sau eroare de acces
+    else Identitatea este validă
+        App->>Stock: Validează simbolul și cererea
+        alt Simbolul sau datele sunt invalide
+            Stock-->>App: Eroare de validare
+            App-->>Web: Respinge datele incorecte
+            Web-->>User: Afișează mesaj de validare
+        else Datele introduse sunt valide
+            Stock->>Collector: Solicită prețul cu limită de vechime și termen de răspuns
+            Collector->>Store: Citește prețul acceptat și marcajul temporal
+
+            alt Baza de date nu poate fi citită
+                Store-->>Collector: Eroare la citire
+                Collector-->>Stock: Date indisponibile
+                Stock-->>App: Preț indisponibil din cauza erorii de stocare
+                App-->>Web: Returnează rezultatul indisponibil
+                Web-->>User: Afișează că prețul nu este disponibil, nu valoarea zero
+            else Prețul lipsește
+                Store-->>Collector: Nu există un preț acceptat
+                Note over Collector: Solicită sau se alătură unei sincronizări dacă este permis și există timp
+                Collector->>Collector: Încearcă sincronizarea declanșată de cerere
+                alt Un preț valid este salvat înainte de termenul limită
+                    Collector->>Store: Citește din nou prețul acceptat
+                    Store-->>Collector: Preț și marcaj temporal
+                    Collector-->>Stock: Returnează prețul și marcajul temporal
+                    Stock-->>App: Rezultatul cu preț valid
+                    App-->>Web: Returnează prețul și momentul datelor
+                    Web-->>User: Afișează prețul și momentul datelor
+                else Nu devine disponibil niciun preț utilizabil
+                    Collector-->>Stock: Date indisponibile
+                    Stock-->>App: Preț indisponibil
+                    App-->>Web: Returnează rezultatul indisponibil
+                    Web-->>User: Afișează că prețul nu este disponibil, nu valoarea zero
+                end
+            else Prețul există
+                Store-->>Collector: Preț și marcaj temporal
+                alt Prețul se încadrează în limita de vechime acceptată
+                    Collector-->>Stock: Returnează prețul acceptat și marcajul temporal
+                    Stock-->>App: Rezultatul cu prețul
+                    App-->>Web: Returnează prețul și momentul datelor
+                    Web-->>User: Afișează prețul și momentul datelor
+                else Prețul este prea vechi
+                    Note over Collector: Solicită sau se alătură unei sincronizări dacă este permis
+                    Collector->>Collector: Încearcă sincronizarea
+                    alt Un preț suficient de recent este salvat înainte de termen
+                        Collector->>Store: Citește din nou prețul acceptat
+                        Store-->>Collector: Preț și marcaj temporal
+                        Collector-->>Stock: Returnează prețul suficient de recent
+                        Stock-->>App: Rezultatul cu prețul
+                        App-->>Web: Returnează prețul și momentul datelor
+                        Web-->>User: Afișează prețul și momentul datelor
+                    else Datele rămân prea vechi sau sincronizarea eșuează
+                        Collector-->>Stock: Date indisponibile sau prea vechi
+                        Stock-->>App: Preț indisponibil
+                        App-->>Web: Returnează rezultatul indisponibil
+                        Web-->>User: Afișează starea de indisponibilitate sau date prea vechi
+                    end
+                end
+            end
+        end
+    end
+```
+
+### Ipoteze pentru diagrama B
+
+1. Utilizatorul trebuie să fie autentificat înainte de accesarea funcțiilor protejate ale Dashboard-ului.
+2. Simbolul acțiunii și parametrii cererii sunt validați înainte de citirea datelor bursiere.
+3. Dacă există un preț acceptat și suficient de recent, aplicația îl citește din baza de date fără a trimite o nouă cerere către furnizorul extern.
+4. Dacă prețul lipsește sau este prea vechi, aplicația poate solicita sincronizarea prin colectorul de date bursiere.
+5. Sincronizarea declanșată de o cerere trebuie să respecte limitele furnizorului și termenul de răspuns.
+6. Dacă baza de date nu poate fi citită, aplicația returnează un rezultat de indisponibilitate, nu valoarea zero.
+7. Dacă prețul rămâne prea vechi, acesta nu trebuie prezentat ca fiind actual. Aplicația poate afișa un mesaj explicit despre datele vechi sau poate indica faptul că prețul nu este disponibil.
+8. Dacă nu se obțin date acceptabile până la termenul limită, cererea returnează un rezultat controlat, fără să aștepte la nesfârșit.
+
+### Cerințe de performanță
+
+Proiectarea respectă obiectivul din laboratorul 2: pentru citiri, percentila 95 a timpului de răspuns (P95) trebuie să fie sub 2 secunde.
+
+Dacă sincronizarea nu se încheie în intervalul permis, cererea trebuie să poată returna un rezultat de indisponibilitate, în loc să aștepte nelimitat.
+
+## 6. Diagrama de secvență C: Modificarea unei liste private de urmărire
+
+Această diagramă prezintă modul în care utilizatorul adaugă sau elimină o acțiune din lista personală de urmărire. Sunt incluse verificarea identității, validarea datelor, verificarea permisiunilor și erorile de stocare.
+
+```mermaid
+sequenceDiagram
+    actor User as Utilizator autentificat
+    participant Web as Aplicație web
+    participant App as Aplicația Dashboard
+    participant Identity as Componenta de identificare și acces
+    participant Watchlist as Componenta listei de urmărire
+    participant DB as Baza de date a utilizatorilor
+
+    User->>Web: Adaugă sau elimină o acțiune din listă
+    Web->>App: Trimite modificarea listei
+    App->>Identity: Verifică identitatea
+    Identity-->>App: Identitate validă sau invalidă
+
+    alt Identitatea este invalidă
+        App-->>Web: Respinge cererea (401 Unauthorized)
+        Web-->>User: Afișează eroarea de autentificare
+    else Identitatea este validă
+        App->>Watchlist: Solicită modificarea folosind identitatea utilizatorului
+        Watchlist->>Watchlist: Validează simbolul și operația
+
+        alt Datele sunt invalide
+            Watchlist-->>App: Eroare de validare
+            App-->>Web: Respinge modificarea
+            Web-->>User: Afișează mesajul de validare
+        else Datele sunt valide
+            Watchlist->>DB: Verifică proprietarul și permisiunile
+            DB-->>Watchlist: Returnează rezultatul verificării
+
+            alt Utilizatorul nu are permisiunea de modificare
+                Watchlist-->>App: Respinge modificarea (403 Forbidden)
+                App-->>Web: Returnează eroarea de permisiune
+                Web-->>User: Afișează mesajul de acces interzis
+                Note over Watchlist,DB: Nu se efectuează nicio modificare
+            else Utilizatorul este proprietarul listei
+                Watchlist->>DB: Salvează modificarea listei
+                alt Salvarea este confirmată
+                    DB-->>Watchlist: Modificarea a fost salvată
+                    Note over Watchlist,DB: Succesul este raportat numai după confirmarea salvării
+                    Watchlist-->>App: Modificare reușită
+                    App-->>Web: Returnează succes
+                    Web-->>User: Afișează lista actualizată
+                    User->>Web: Citește din nou lista
+                    Web->>App: Solicită lista proprie
+                    App->>Watchlist: Citește lista utilizatorului autentificat
+                    Watchlist->>DB: Citește lista deținută de acest utilizator
+                    DB-->>Watchlist: Returnează lista actualizată
+                    Watchlist-->>App: Returnează lista actualizată
+                    App-->>Web: Returnează lista curentă
+                    Web-->>User: Afișează modificarea salvată
+                else Apare o eroare la salvare
+                    DB-->>Watchlist: Salvarea nu a fost confirmată
+                    Watchlist-->>App: Modificarea nu poate fi confirmată
+                    App-->>Web: Returnează eroarea
+                    Web-->>User: Afișează că modificarea nu a fost confirmată
+                    Note over Watchlist,DB: Nu se raportează succesul fără confirmarea salvării
+                end
+            end
+        end
+    end
+```
+
+### Ipoteze pentru diagrama C
+
+1. Identitatea utilizatorului este verificată înainte de prelucrarea modificării.
+2. Componenta listei de urmărire validează operația și simbolul acțiunii.
+3. Permisiunile sunt verificate înainte de modificarea listei.
+4. Dacă utilizatorul nu are permisiuni, modificarea este respinsă și datele rămân neschimbate.
+5. Succesul poate fi raportat numai după confirmarea salvării în baza de date.
+6. La următoarea citire, același utilizator trebuie să vadă modificarea salvată.
+7. Alți utilizatori nu trebuie să poată vizualiza sau modifica lista privată a unei alte persoane.
+8. Dacă apare o eroare de stocare, aplicația nu trebuie să raporteze modificarea ca fiind reușită.
+
+## 7. Cerințe de disponibilitate și performanță
+
+Sistemul trebuie să urmărească obiectivele de disponibilitate definite în laboratorul 2:
+
+- **99,99% disponibilitate în timpul programului de tranzacționare.**
+- **99,9% disponibilitate în afara programului de tranzacționare.**
+- **P95 sub 2 secunde pentru cererile de citire.**
+
+Aceste obiective sunt susținute prin separarea citirilor de procesul de sincronizare, păstrarea datelor acceptate anterior, validarea datelor noi și tratarea controlată a erorilor.
+
+Obiectivele reprezintă cerințe de proiectare și trebuie verificate ulterior prin implementare și testare.
+
+## 8. Concluzie
+
+În acest laborator a fost definită arhitectura Personal Investment Dashboard prin trei diagrame arhitecturale: System Context, Container și Component.
+
+Au fost descrise și trei fluxuri importante: sincronizarea datelor bursiere, citirea prețului unei acțiuni și modificarea unei liste private de urmărire.
+
+Proiectarea separă responsabilitățile aplicației, păstrează credențialele furnizorului pe server, validează datele bursiere și protejează informațiile personale ale utilizatorilor. În cazul erorilor, datele acceptate anterior sunt păstrate, iar aplicația returnează rezultate controlate în loc să prezinte informații incorecte.
+
+Cele șase diagrame Mermaid descriu atât funcționarea normală a sistemului, cât și principalele situații de eroare și mecanismele de protecție a datelor.
